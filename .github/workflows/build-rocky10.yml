@@ -15,9 +15,9 @@ on:
   workflow_dispatch:
     inputs:
       architecture:
-        description: 'Architecture to build (x86_64, aarch64, or both)'
+        description: 'Architecture to build (default: x86_64 only)'
         required: false
-        default: 'both'
+        default: 'x86_64'
         type: choice
         options:
           - x86_64
@@ -168,9 +168,8 @@ jobs:
     needs: lint
     if: |
       (github.event_name != 'pull_request' || !github.event.pull_request.draft) &&
-      (github.event_name != 'workflow_dispatch' ||
-       github.event.inputs.architecture == 'both' ||
-       github.event.inputs.architecture == 'aarch64')
+      github.event_name == 'workflow_dispatch' &&
+      (github.event.inputs.architecture == 'both' || github.event.inputs.architecture == 'aarch64')
     timeout-minutes: 180
 
     steps:
