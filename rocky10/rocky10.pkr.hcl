@@ -48,6 +48,12 @@ variable "ovmf_suffix" {
   description = "Suffix for OVMF CODE and VARS files. Newer systems such as Noble use _4M."
 }
 
+variable "use_kvm" {
+  type        = bool
+  default     = true
+  description = "Use KVM acceleration. Set to false for environments without KVM support (e.g., GitHub Actions)."
+}
+
 locals {
   qemu_arch = {
     "x86_64"  = "x86_64"
@@ -62,12 +68,12 @@ locals {
     "aarch64" = ""
   }
   qemu_machine = {
-    "x86_64"  = "accel=kvm"
-    "aarch64" = var.host_is_arm ? "virt,accel=kvm" : "virt"
+    "x86_64"  = var.use_kvm ? "accel=kvm" : "accel=tcg"
+    "aarch64" = var.host_is_arm && var.use_kvm ? "virt,accel=kvm" : "virt,accel=tcg"
   }
   qemu_cpu = {
-    "x86_64"  = "host"
-    "aarch64" = var.host_is_arm ? "host" : "max"
+    "x86_64"  = var.use_kvm ? "host" : "qemu64"
+    "aarch64" = var.host_is_arm && var.use_kvm ? "host" : "max"
   }
 
   ks_proxy           = var.ks_proxy != "" ? "--proxy=${var.ks_proxy}" : ""

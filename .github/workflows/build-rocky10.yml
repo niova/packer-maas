@@ -145,12 +145,13 @@ jobs:
             export HOST_IS_ARM=false
           fi
 
-          # Build the image
+          # Build the image (using TCG instead of KVM in CI)
           packer build \
             -var architecture=${ARCH} \
             -var host_is_arm=${HOST_IS_ARM} \
             -var timeout=${TIMEOUT} \
             -var ovmf_suffix=${OVMF_SFX} \
+            -var use_kvm=false \
             rocky10.pkr.hcl
 
       - name: Generate build metadata
@@ -273,12 +274,13 @@ jobs:
             export HOST_IS_ARM=false
           fi
 
-          # Build the image
+          # Build the image (using TCG instead of KVM in CI)
           packer build \
             -var architecture=${ARCH} \
             -var host_is_arm=${HOST_IS_ARM} \
             -var timeout=${TIMEOUT} \
             -var ovmf_suffix=${OVMF_SFX} \
+            -var use_kvm=false \
             rocky10.pkr.hcl
 
       - name: Generate build metadata
