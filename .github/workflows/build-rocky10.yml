@@ -61,15 +61,15 @@ jobs:
     name: Build Rocky 10 (${{ matrix.arch }})
     runs-on: ubuntu-24.04
     needs: lint
-    if: github.event_name != 'pull_request' || !github.event.pull_request.draft
+    if: |
+      (github.event_name != 'pull_request' || !github.event.pull_request.draft) &&
+      (github.event_name != 'workflow_dispatch' ||
+       github.event.inputs.architecture == 'both' ||
+       github.event.inputs.architecture == matrix.arch)
     strategy:
       fail-fast: false
       matrix:
-        arch: ${{ 
-          github.event_name == 'workflow_dispatch' && 
-          (github.event.inputs.architecture == 'both' && fromJSON('["x86_64", "aarch64"]') || fromJSON(format('["{0}"]', github.event.inputs.architecture))) || 
-          fromJSON('["x86_64", "aarch64"]') 
-        }}
+        arch: [x86_64, aarch64]
     timeout-minutes: 180
 
     steps:
