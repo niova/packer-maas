@@ -32,8 +32,8 @@ variable "timeout" {
 
 variable "architecture" {
   type        = string
-  default     = "amd64"
-  description = "The architecture to build the image for (amd64 or arm64)"
+  default     = "x86_64"
+  description = "The architecture to build the image for (x86_64 or aarch64)"
 }
 
 variable "host_is_arm" {
