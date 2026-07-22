@@ -72,7 +72,7 @@ locals {
     "aarch64" = var.host_is_arm && var.use_kvm ? "virt,accel=kvm" : "virt,accel=tcg"
   }
   qemu_cpu = {
-    "x86_64"  = var.use_kvm ? "host" : "qemu64"
+    "x86_64"  = var.use_kvm ? "host" : "max"
     "aarch64" = var.host_is_arm && var.use_kvm ? "host" : "max"
   }
 
