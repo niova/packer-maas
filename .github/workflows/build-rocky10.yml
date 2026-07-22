@@ -24,9 +24,9 @@ on:
           - aarch64
           - both
       timeout:
-        description: 'Build timeout (e.g., 1h, 2h)'
+        description: 'Build timeout (e.g., 2h, 4h) - TCG builds are slow'
         required: false
-        default: '1h'
+        default: '4h'
         type: string
 
 env:
@@ -125,7 +125,7 @@ jobs:
         working-directory: rocky10
         env:
           PACKER_LOG: 1
-          TIMEOUT: ${{ github.event.inputs.timeout || '1h' }}
+          TIMEOUT: ${{ github.event.inputs.timeout || '2h' }}
           ARCH: x86_64
         run: |
           # Prepare OVMF files
@@ -254,7 +254,7 @@ jobs:
         working-directory: rocky10
         env:
           PACKER_LOG: 1
-          TIMEOUT: ${{ github.event.inputs.timeout || '1h' }}
+          TIMEOUT: ${{ github.event.inputs.timeout || '2h' }}
           ARCH: aarch64
         run: |
           # Prepare OVMF files
