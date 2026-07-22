@@ -110,4 +110,6 @@ iscsi-initiator-utils
 -a*-firmware
 # Remove Intel wireless firmware
 -i*-firmware
+# Remove debug kernel (saves ~15+ minutes on TCG builds)
+-kernel-debug*
 %end

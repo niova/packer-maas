@@ -68,8 +68,8 @@ locals {
     "aarch64" = ""
   }
   qemu_machine = {
-    "x86_64"  = var.use_kvm ? "accel=kvm" : "accel=tcg"
-    "aarch64" = var.host_is_arm && var.use_kvm ? "virt,accel=kvm" : "virt,accel=tcg"
+    "x86_64"  = var.use_kvm ? "accel=kvm" : "accel=tcg,thread=multi"
+    "aarch64" = var.host_is_arm && var.use_kvm ? "virt,accel=kvm" : "virt,accel=tcg,thread=multi"
   }
   qemu_cpu = {
     "x86_64"  = var.use_kvm ? "host" : "max"
@@ -92,8 +92,8 @@ source "qemu" "rocky10" {
   iso_checksum    = "file:http://download.rockylinux.org/pub/rocky/10/isos/${var.architecture}/CHECKSUM"
   iso_url         = "http://download.rockylinux.org/pub/rocky/10/isos/${var.architecture}/Rocky-10-latest-${var.architecture}-boot.iso"
   iso_target_path = "packer_cache/Rocky-10-latest-${var.architecture}-boot.iso"
-  memory          = 2048
-  cores           = 4
+  memory          = 4096
+  cores           = var.use_kvm ? 4 : 2
   qemu_binary     = "qemu-system-${lookup(local.qemu_arch, var.architecture, "")}"
   qemuargs = [
     ["-serial", "stdio"],
