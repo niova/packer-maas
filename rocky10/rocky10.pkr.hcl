@@ -77,18 +77,18 @@ locals {
 }
 
 source "qemu" "rocky10" {
-  boot_command     = ["<up><wait>", "e", "<down><down><down><left>", " console=ttyS0 inst.cmdline inst.text inst.ks=http://{{.HTTPIP}}:{{.HTTPPort}}/rocky10.ks <f10>"]
-  boot_wait        = "5s"
-  communicator     = "none"
-  disk_size        = "45G"
-  format           = "qcow2"
-  headless         = true
-  iso_checksum     = "file:http://download.rockylinux.org/pub/rocky/10/isos/${var.architecture}/CHECKSUM"
-  iso_url          = "http://download.rockylinux.org/pub/rocky/10/isos/${var.architecture}/Rocky-10-latest-${var.architecture}-boot.iso"
-  iso_target_path  = "packer_cache/Rocky-10-latest-${var.architecture}-boot.iso"
-  memory           = 2048
-  cores            = 4
-  qemu_binary      = "qemu-system-${lookup(local.qemu_arch, var.architecture, "")}"
+  boot_command    = ["<up><wait>", "e", "<down><down><down><left>", " console=ttyS0 inst.cmdline inst.text inst.ks=http://{{.HTTPIP}}:{{.HTTPPort}}/rocky10.ks <f10>"]
+  boot_wait       = "5s"
+  communicator    = "none"
+  disk_size       = "45G"
+  format          = "qcow2"
+  headless        = true
+  iso_checksum    = "file:http://download.rockylinux.org/pub/rocky/10/isos/${var.architecture}/CHECKSUM"
+  iso_url         = "http://download.rockylinux.org/pub/rocky/10/isos/${var.architecture}/Rocky-10-latest-${var.architecture}-boot.iso"
+  iso_target_path = "packer_cache/Rocky-10-latest-${var.architecture}-boot.iso"
+  memory          = 2048
+  cores           = 4
+  qemu_binary     = "qemu-system-${lookup(local.qemu_arch, var.architecture, "")}"
   qemuargs = [
     ["-serial", "stdio"],
     ["-boot", "strict=off"],
