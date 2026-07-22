@@ -1,0 +1,167 @@
+name: Build Rocky 10 Image
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'rocky10/**'
+      - 'scripts/**'
+      - '.github/workflows/build-rocky10.yml'
+  pull_request:
+    paths:
+      - 'rocky10/**'
+      - 'scripts/**'
+      - '.github/workflows/build-rocky10.yml'
+  workflow_dispatch:
+    inputs:
+      architecture:
+        description: 'Architecture to build (x86_64, aarch64, or both)'
+        required: false
+        default: 'both'
+        type: choice
+        options:
+          - x86_64
+          - aarch64
+          - both
+      timeout:
+        description: 'Build timeout (e.g., 1h, 2h)'
+        required: false
+        default: '1h'
+        type: string
+
+env:
+  PACKER_VERSION: '1.11.0'
+
+jobs:
+  lint:
+    name: Lint and Validate
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Packer
+        uses: hashicorp/setup-packer@main
+        with:
+          version: ${{ env.PACKER_VERSION }}
+
+      - name: Initialize Packer
+        working-directory: rocky10
+        run: packer init rocky10.pkr.hcl
+
+      - name: Validate Packer template
+        working-directory: rocky10
+        run: packer validate rocky10.pkr.hcl
+
+      - name: Check Packer formatting
+        working-directory: rocky10
+        run: packer fmt -check -diff .
+
+  build:
+    name: Build Rocky 10 (${{ matrix.arch }})
+    runs-on: ubuntu-24.04
+    needs: lint
+    if: github.event_name != 'pull_request' || !github.event.pull_request.draft
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: ${{ 
+          github.event_name == 'workflow_dispatch' && 
+          (github.event.inputs.architecture == 'both' && fromJSON('["x86_64", "aarch64"]') || fromJSON(format('["{0}"]', github.event.inputs.architecture))) || 
+          fromJSON('["x86_64", "aarch64"]') 
+        }}
+    timeout-minutes: 180
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Free up disk space
+        run: |
+          sudo rm -rf /usr/share/dotnet
+          sudo rm -rf /usr/local/lib/android
+          sudo rm -rf /opt/ghc
+          sudo rm -rf /opt/hostedtoolcache/CodeQL
+          sudo docker image prune --all --force
+          df -h
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            qemu-system-x86 \
+            qemu-system-arm \
+            qemu-utils \
+            qemu-system-modules-spice \
+            libnbd-bin \
+            nbdkit \
+            fuse2fs \
+            ovmf \
+            cloud-image-utils \
+            parted
+
+      - name: Setup Packer
+        uses: hashicorp/setup-packer@main
+        with:
+          version: ${{ env.PACKER_VERSION }}
+
+      - name: Cache Packer plugins
+        uses: actions/cache@v4
+        with:
+          path: ~/.config/packer/plugins
+          key: packer-plugins-${{ runner.os }}-${{ hashFiles('rocky10/rocky10.pkr.hcl') }}
+          restore-keys: |
+            packer-plugins-${{ runner.os }}-
+
+      - name: Cache Rocky ISO
+        uses: actions/cache@v4
+        with:
+          path: rocky10/packer_cache
+          key: rocky10-iso-${{ matrix.arch }}-${{ hashFiles('rocky10/rocky10.pkr.hcl') }}
+          restore-keys: |
+            rocky10-iso-${{ matrix.arch }}-
+
+      - name: Initialize Packer
+        working-directory: rocky10
+        run: packer init rocky10.pkr.hcl
+
+      - name: Build Rocky 10 image
+        working-directory: rocky10
+        env:
+          PACKER_LOG: 1
+          TIMEOUT: ${{ github.event.inputs.timeout || '1h' }}
+        run: |
+          make ARCH=${{ matrix.arch }} TIMEOUT=${TIMEOUT}
+
+      - name: Generate build metadata
+        working-directory: rocky10
+        run: |
+          echo "Build Date: $(date -u +%Y-%m-%dT%H:%M:%SZ)" > rocky10-${{ matrix.arch }}.buildinfo
+          echo "Architecture: ${{ matrix.arch }}" >> rocky10-${{ matrix.arch }}.buildinfo
+          echo "Git Commit: ${{ github.sha }}" >> rocky10-${{ matrix.arch }}.buildinfo
+          echo "Workflow Run: ${{ github.run_id }}" >> rocky10-${{ matrix.arch }}.buildinfo
+          cat rocky10-${{ matrix.arch }}.buildinfo
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: rocky10-${{ matrix.arch }}-image
+          path: |
+            rocky10/rocky10.tar.gz
+            rocky10/rocky10-${{ matrix.arch }}.buildinfo
+          retention-days: 30
+          compression-level: 0
+
+      - name: Display artifact info
+        working-directory: rocky10
+        run: |
+          ls -lh rocky10.tar.gz
+          sha256sum rocky10.tar.gz > rocky10-${{ matrix.arch }}.sha256
+          cat rocky10-${{ matrix.arch }}.sha256
+
+      - name: Upload checksum
+        uses: actions/upload-artifact@v4
+        with:
+          name: rocky10-${{ matrix.arch }}-checksum
+          path: rocky10/rocky10-${{ matrix.arch }}.sha256
+          retention-days: 30
