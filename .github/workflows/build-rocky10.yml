@@ -57,19 +57,15 @@ jobs:
         working-directory: rocky10
         run: packer fmt -check -diff .
 
-  build:
-    name: Build Rocky 10 (${{ matrix.arch }})
+  build-x86_64:
+    name: Build Rocky 10 (x86_64)
     runs-on: ubuntu-24.04
     needs: lint
     if: |
       (github.event_name != 'pull_request' || !github.event.pull_request.draft) &&
       (github.event_name != 'workflow_dispatch' ||
        github.event.inputs.architecture == 'both' ||
-       github.event.inputs.architecture == matrix.arch)
-    strategy:
-      fail-fast: false
-      matrix:
-        arch: [x86_64, aarch64]
+       github.event.inputs.architecture == 'x86_64')
     timeout-minutes: 180
 
     steps:
@@ -117,9 +113,9 @@ jobs:
         uses: actions/cache@v4
         with:
           path: rocky10/packer_cache
-          key: rocky10-iso-${{ matrix.arch }}-${{ hashFiles('rocky10/rocky10.pkr.hcl') }}
+          key: rocky10-iso-x86_64-${{ hashFiles('rocky10/rocky10.pkr.hcl') }}
           restore-keys: |
-            rocky10-iso-${{ matrix.arch }}-
+            rocky10-iso-x86_64-
 
       - name: Initialize Packer
         working-directory: rocky10
@@ -131,24 +127,24 @@ jobs:
           PACKER_LOG: 1
           TIMEOUT: ${{ github.event.inputs.timeout || '1h' }}
         run: |
-          make ARCH=${{ matrix.arch }} TIMEOUT=${TIMEOUT}
+          make ARCH=x86_64 TIMEOUT=${TIMEOUT}
 
       - name: Generate build metadata
         working-directory: rocky10
         run: |
-          echo "Build Date: $(date -u +%Y-%m-%dT%H:%M:%SZ)" > rocky10-${{ matrix.arch }}.buildinfo
-          echo "Architecture: ${{ matrix.arch }}" >> rocky10-${{ matrix.arch }}.buildinfo
-          echo "Git Commit: ${{ github.sha }}" >> rocky10-${{ matrix.arch }}.buildinfo
-          echo "Workflow Run: ${{ github.run_id }}" >> rocky10-${{ matrix.arch }}.buildinfo
-          cat rocky10-${{ matrix.arch }}.buildinfo
+          echo "Build Date: $(date -u +%Y-%m-%dT%H:%M:%SZ)" > rocky10-x86_64.buildinfo
+          echo "Architecture: x86_64" >> rocky10-x86_64.buildinfo
+          echo "Git Commit: ${{ github.sha }}" >> rocky10-x86_64.buildinfo
+          echo "Workflow Run: ${{ github.run_id }}" >> rocky10-x86_64.buildinfo
+          cat rocky10-x86_64.buildinfo
 
       - name: Upload build artifact
         uses: actions/upload-artifact@v4
         with:
-          name: rocky10-${{ matrix.arch }}-image
+          name: rocky10-x86_64-image
           path: |
             rocky10/rocky10.tar.gz
-            rocky10/rocky10-${{ matrix.arch }}.buildinfo
+            rocky10/rocky10-x86_64.buildinfo
           retention-days: 30
           compression-level: 0
 
@@ -156,12 +152,117 @@ jobs:
         working-directory: rocky10
         run: |
           ls -lh rocky10.tar.gz
-          sha256sum rocky10.tar.gz > rocky10-${{ matrix.arch }}.sha256
-          cat rocky10-${{ matrix.arch }}.sha256
+          sha256sum rocky10.tar.gz > rocky10-x86_64.sha256
+          cat rocky10-x86_64.sha256
 
       - name: Upload checksum
         uses: actions/upload-artifact@v4
         with:
-          name: rocky10-${{ matrix.arch }}-checksum
-          path: rocky10/rocky10-${{ matrix.arch }}.sha256
+          name: rocky10-x86_64-checksum
+          path: rocky10/rocky10-x86_64.sha256
+          retention-days: 30
+
+  build-aarch64:
+    name: Build Rocky 10 (aarch64)
+    runs-on: ubuntu-24.04
+    needs: lint
+    if: |
+      (github.event_name != 'pull_request' || !github.event.pull_request.draft) &&
+      (github.event_name != 'workflow_dispatch' ||
+       github.event.inputs.architecture == 'both' ||
+       github.event.inputs.architecture == 'aarch64')
+    timeout-minutes: 180
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Free up disk space
+        run: |
+          sudo rm -rf /usr/share/dotnet
+          sudo rm -rf /usr/local/lib/android
+          sudo rm -rf /opt/ghc
+          sudo rm -rf /opt/hostedtoolcache/CodeQL
+          sudo docker image prune --all --force
+          df -h
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            qemu-system-x86 \
+            qemu-system-arm \
+            qemu-utils \
+            qemu-system-modules-spice \
+            libnbd-bin \
+            nbdkit \
+            fuse2fs \
+            ovmf \
+            cloud-image-utils \
+            parted
+
+      - name: Setup Packer
+        uses: hashicorp/setup-packer@main
+        with:
+          version: ${{ env.PACKER_VERSION }}
+
+      - name: Cache Packer plugins
+        uses: actions/cache@v4
+        with:
+          path: ~/.config/packer/plugins
+          key: packer-plugins-${{ runner.os }}-${{ hashFiles('rocky10/rocky10.pkr.hcl') }}
+          restore-keys: |
+            packer-plugins-${{ runner.os }}-
+
+      - name: Cache Rocky ISO
+        uses: actions/cache@v4
+        with:
+          path: rocky10/packer_cache
+          key: rocky10-iso-aarch64-${{ hashFiles('rocky10/rocky10.pkr.hcl') }}
+          restore-keys: |
+            rocky10-iso-aarch64-
+
+      - name: Initialize Packer
+        working-directory: rocky10
+        run: packer init rocky10.pkr.hcl
+
+      - name: Build Rocky 10 image
+        working-directory: rocky10
+        env:
+          PACKER_LOG: 1
+          TIMEOUT: ${{ github.event.inputs.timeout || '1h' }}
+        run: |
+          make ARCH=aarch64 TIMEOUT=${TIMEOUT}
+
+      - name: Generate build metadata
+        working-directory: rocky10
+        run: |
+          echo "Build Date: $(date -u +%Y-%m-%dT%H:%M:%SZ)" > rocky10-aarch64.buildinfo
+          echo "Architecture: aarch64" >> rocky10-aarch64.buildinfo
+          echo "Git Commit: ${{ github.sha }}" >> rocky10-aarch64.buildinfo
+          echo "Workflow Run: ${{ github.run_id }}" >> rocky10-aarch64.buildinfo
+          cat rocky10-aarch64.buildinfo
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: rocky10-aarch64-image
+          path: |
+            rocky10/rocky10.tar.gz
+            rocky10/rocky10-aarch64.buildinfo
+          retention-days: 30
+          compression-level: 0
+
+      - name: Display artifact info
+        working-directory: rocky10
+        run: |
+          ls -lh rocky10.tar.gz
+          sha256sum rocky10.tar.gz > rocky10-aarch64.sha256
+          cat rocky10-aarch64.sha256
+
+      - name: Upload checksum
+        uses: actions/upload-artifact@v4
+        with:
+          name: rocky10-aarch64-checksum
+          path: rocky10/rocky10-aarch64.sha256
           retention-days: 30
