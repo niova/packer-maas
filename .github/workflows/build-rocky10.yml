@@ -125,7 +125,7 @@ jobs:
         working-directory: rocky10
         env:
           PACKER_LOG: 1
-          TIMEOUT: ${{ github.event.inputs.timeout || '2h' }}
+          TIMEOUT: ${{ github.event.inputs.timeout || '3h' }}
           ARCH: x86_64
         run: |
           # Prepare OVMF files
@@ -254,7 +254,7 @@ jobs:
         working-directory: rocky10
         env:
           PACKER_LOG: 1
-          TIMEOUT: ${{ github.event.inputs.timeout || '2h' }}
+          TIMEOUT: ${{ github.event.inputs.timeout || '3h' }}
           ARCH: aarch64
         run: |
           # Prepare OVMF files
