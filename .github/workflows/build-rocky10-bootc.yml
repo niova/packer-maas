@@ -1,0 +1,199 @@
+name: Build Rocky 10 bootc Image
+
+on:
+  workflow_dispatch:
+    inputs:
+      bootc_image_ref:
+        description: 'bootc container image reference (e.g., quay.io/user/image:tag)'
+        required: true
+        type: string
+      bootc_registry_url:
+        description: 'Container registry URL (optional, for authentication)'
+        required: false
+        type: string
+      bootc_registry_insecure:
+        description: 'Allow insecure (HTTP) registry'
+        required: false
+        type: boolean
+        default: false
+      architecture:
+        description: 'Architecture to build'
+        required: false
+        default: 'x86_64'
+        type: choice
+        options:
+          - x86_64
+          - aarch64
+      timeout:
+        description: 'Build timeout (bootc is faster, usually 30-45 min)'
+        required: false
+        default: '1h'
+        type: string
+
+env:
+  PACKER_VERSION: '1.11.0'
+
+jobs:
+  lint:
+    name: Lint and Validate (bootc)
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Packer
+        uses: hashicorp/setup-packer@main
+        with:
+          version: ${{ env.PACKER_VERSION }}
+
+      - name: Initialize Packer
+        working-directory: rocky10
+        run: packer init rocky10-bootc.pkr.hcl
+
+      - name: Validate Packer template
+        working-directory: rocky10
+        run: |
+          packer validate \
+            -var bootc_image_ref="registry:example.com/test:latest" \
+            rocky10-bootc.pkr.hcl
+
+      - name: Check Packer formatting
+        working-directory: rocky10
+        run: packer fmt -check -diff .
+
+  build:
+    name: Build Rocky 10 bootc (${{ github.event.inputs.architecture }})
+    runs-on: ubuntu-24.04
+    needs: lint
+    timeout-minutes: 120
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Free up disk space
+        run: |
+          sudo rm -rf /usr/share/dotnet
+          sudo rm -rf /usr/local/lib/android
+          sudo rm -rf /opt/ghc
+          sudo rm -rf /opt/hostedtoolcache/CodeQL
+          sudo docker image prune --all --force
+          df -h
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            qemu-system-x86 \
+            qemu-system-arm \
+            qemu-utils \
+            qemu-system-modules-spice \
+            libnbd-bin \
+            nbdkit \
+            fuse2fs \
+            ovmf \
+            cloud-image-utils \
+            parted
+
+      - name: Setup Packer
+        uses: hashicorp/setup-packer@main
+        with:
+          version: ${{ env.PACKER_VERSION }}
+
+      - name: Cache Packer plugins
+        uses: actions/cache@v4
+        with:
+          path: ~/.config/packer/plugins
+          key: packer-plugins-${{ runner.os }}-${{ hashFiles('rocky10/rocky10-bootc.pkr.hcl') }}
+          restore-keys: |
+            packer-plugins-${{ runner.os }}-
+
+      - name: Cache Rocky ISO
+        uses: actions/cache@v4
+        with:
+          path: rocky10/packer_cache
+          key: rocky10-iso-${{ github.event.inputs.architecture }}-${{ hashFiles('rocky10/rocky10-bootc.pkr.hcl') }}
+          restore-keys: |
+            rocky10-iso-${{ github.event.inputs.architecture }}-
+
+      - name: Initialize Packer
+        working-directory: rocky10
+        run: packer init rocky10-bootc.pkr.hcl
+
+      - name: Build Rocky 10 bootc image
+        working-directory: rocky10
+        env:
+          PACKER_LOG: 1
+          TIMEOUT: ${{ github.event.inputs.timeout || '1h' }}
+          ARCH: ${{ github.event.inputs.architecture }}
+          # Note: BOOTC_REGISTRY_AUTH should be set as a GitHub secret
+          BOOTC_REGISTRY_AUTH: ${{ secrets.BOOTC_REGISTRY_AUTH }}
+        run: |
+          # Prepare OVMF files
+          if [ ! -f /usr/share/OVMF/OVMF_CODE.fd ]; then
+            export OVMF_SFX="_4M"
+          else
+            export OVMF_SFX=""
+          fi
+          
+          cp -v /usr/share/OVMF/OVMF_VARS${OVMF_SFX}.fd ${ARCH}_VARS.fd
+          
+          if [ "${ARCH}" = "aarch64" ]; then
+            truncate -s 64m ${ARCH}_VARS.fd
+          else
+            truncate -s 2m ${ARCH}_VARS.fd
+          fi
+          
+          # Detect host architecture
+          if [ "$(uname -m)" = "aarch64" ]; then
+            export HOST_IS_ARM=true
+          else
+            export HOST_IS_ARM=false
+          fi
+          
+          # Build with bootc-specific parameters
+          packer build \
+            -var architecture=${ARCH} \
+            -var host_is_arm=${HOST_IS_ARM} \
+            -var timeout=${TIMEOUT} \
+            -var ovmf_suffix=${OVMF_SFX} \
+            -var use_kvm=false \
+            -var bootc_image_ref="${{ github.event.inputs.bootc_image_ref }}" \
+            $([ -n "${{ github.event.inputs.bootc_registry_url }}" ] && echo "-var bootc_registry_url=${{ github.event.inputs.bootc_registry_url }}") \
+            $([ -n "${BOOTC_REGISTRY_AUTH}" ] && echo "-var bootc_registry_auth=${BOOTC_REGISTRY_AUTH}") \
+            -var bootc_registry_insecure=${{ github.event.inputs.bootc_registry_insecure }} \
+            rocky10-bootc.pkr.hcl
+
+      - name: Generate build metadata
+        working-directory: rocky10
+        run: |
+          echo "Build Date: $(date -u +%Y-%m-%dT%H:%M:%SZ)" > rocky10-bootc-${{ github.event.inputs.architecture }}.buildinfo
+          echo "Architecture: ${{ github.event.inputs.architecture }}" >> rocky10-bootc-${{ github.event.inputs.architecture }}.buildinfo
+          echo "bootc Image: ${{ github.event.inputs.bootc_image_ref }}" >> rocky10-bootc-${{ github.event.inputs.architecture }}.buildinfo
+          echo "Git Commit: ${{ github.sha }}" >> rocky10-bootc-${{ github.event.inputs.architecture }}.buildinfo
+          echo "Workflow Run: ${{ github.run_id }}" >> rocky10-bootc-${{ github.event.inputs.architecture }}.buildinfo
+          cat rocky10-bootc-${{ github.event.inputs.architecture }}.buildinfo
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: rocky10-bootc-${{ github.event.inputs.architecture }}-image
+          path: |
+            rocky10/rocky10-bootc.tar.gz
+            rocky10/rocky10-bootc-${{ github.event.inputs.architecture }}.buildinfo
+          retention-days: 30
+          compression-level: 0
+
+      - name: Display artifact info
+        working-directory: rocky10
+        run: |
+          ls -lh rocky10-bootc.tar.gz
+          sha256sum rocky10-bootc.tar.gz > rocky10-bootc-${{ github.event.inputs.architecture }}.sha256
+          cat rocky10-bootc-${{ github.event.inputs.architecture }}.sha256
+
+      - name: Upload checksum
+        uses: actions/upload-artifact@v4
+        with:
+          name: rocky10-bootc-${{ github.event.inputs.architecture }}-checksum
+          path: rocky10/rocky10-bootc-${{ github.event.inputs.architecture }}.sha256
+          retention-days: 30
