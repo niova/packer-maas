@@ -132,9 +132,9 @@ source "qemu" "rocky10-bootc" {
   http_content = {
     "/rocky10-bootc.ks" = templatefile("${path.root}/http/rocky10-bootc.ks.pkrtpl.hcl",
       {
-        BOOTC_IMAGE_REF  = var.bootc_image_ref,
-        BOOTC_PRE_AUTH   = local.bootc_auth_setup,
-        BOOTC_POST_AUTH  = local.bootc_auth_setup
+        BOOTC_IMAGE_REF = var.bootc_image_ref,
+        BOOTC_PRE_AUTH  = local.bootc_auth_setup,
+        BOOTC_POST_AUTH = local.bootc_auth_setup
       }
     )
   }
