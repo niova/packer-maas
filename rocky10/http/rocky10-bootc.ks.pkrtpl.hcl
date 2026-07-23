@@ -2,7 +2,8 @@ text --non-interactive
 rootpw --lock
 zerombr
 clearpart --all --initlabel --disklabel=gpt
-reqpart
+# bootc manages its own boot structure, use simple partition layout
+part /boot/efi --fstype=efi --size=512
 part / --fstype=xfs --grow --asprimary
 
 network --bootproto=dhcp --device=link --activate --onboot=on
