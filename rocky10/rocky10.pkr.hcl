@@ -32,8 +32,8 @@ variable "timeout" {
 
 variable "architecture" {
   type        = string
-  default     = "amd64"
-  description = "The architecture to build the image for (amd64 or arm64)"
+  default     = "x86_64"
+  description = "The architecture to build the image for (x86_64 or aarch64)"
 }
 
 variable "host_is_arm" {
@@ -46,6 +46,12 @@ variable "ovmf_suffix" {
   type        = string
   default     = ""
   description = "Suffix for OVMF CODE and VARS files. Newer systems such as Noble use _4M."
+}
+
+variable "use_kvm" {
+  type        = bool
+  default     = true
+  description = "Use KVM acceleration. Set to false for environments without KVM support (e.g., GitHub Actions)."
 }
 
 locals {
@@ -62,12 +68,12 @@ locals {
     "aarch64" = ""
   }
   qemu_machine = {
-    "x86_64"  = "accel=kvm"
-    "aarch64" = var.host_is_arm ? "virt,accel=kvm" : "virt"
+    "x86_64"  = var.use_kvm ? "accel=kvm" : "accel=tcg"
+    "aarch64" = var.host_is_arm && var.use_kvm ? "virt,accel=kvm" : "virt,accel=tcg"
   }
   qemu_cpu = {
-    "x86_64"  = "host"
-    "aarch64" = var.host_is_arm ? "host" : "max"
+    "x86_64"  = var.use_kvm ? "host" : "max"
+    "aarch64" = var.host_is_arm && var.use_kvm ? "host" : "max"
   }
 
   ks_proxy           = var.ks_proxy != "" ? "--proxy=${var.ks_proxy}" : ""
@@ -77,18 +83,18 @@ locals {
 }
 
 source "qemu" "rocky10" {
-  boot_command     = ["<up><wait>", "e", "<down><down><down><left>", " console=ttyS0 inst.cmdline inst.text inst.ks=http://{{.HTTPIP}}:{{.HTTPPort}}/rocky10.ks <f10>"]
-  boot_wait        = "5s"
-  communicator     = "none"
-  disk_size        = "45G"
-  format           = "qcow2"
-  headless         = true
-  iso_checksum     = "file:http://download.rockylinux.org/pub/rocky/10/isos/${var.architecture}/CHECKSUM"
-  iso_url          = "http://download.rockylinux.org/pub/rocky/10/isos/${var.architecture}/Rocky-10-latest-${var.architecture}-boot.iso"
-  iso_target_path  = "packer_cache/Rocky-10-latest-${var.architecture}-boot.iso"
-  memory           = 2048
-  cores            = 4
-  qemu_binary      = "qemu-system-${lookup(local.qemu_arch, var.architecture, "")}"
+  boot_command    = ["<up><wait>", "e", "<down><down><down><left>", " console=ttyS0 inst.cmdline inst.text inst.ks=http://{{.HTTPIP}}:{{.HTTPPort}}/rocky10.ks <f10>"]
+  boot_wait       = "5s"
+  communicator    = "none"
+  disk_size       = "45G"
+  format          = "qcow2"
+  headless        = true
+  iso_checksum    = "file:http://download.rockylinux.org/pub/rocky/10/isos/${var.architecture}/CHECKSUM"
+  iso_url         = "http://download.rockylinux.org/pub/rocky/10/isos/${var.architecture}/Rocky-10-latest-${var.architecture}-boot.iso"
+  iso_target_path = "packer_cache/Rocky-10-latest-${var.architecture}-boot.iso"
+  memory          = 4096
+  cores           = var.use_kvm ? 4 : 2
+  qemu_binary     = "qemu-system-${lookup(local.qemu_arch, var.architecture, "")}"
   qemuargs = [
     ["-serial", "stdio"],
     ["-boot", "strict=off"],

@@ -74,6 +74,8 @@ The timeout to apply when building the image. The default value is set to 1h.
 
 ## Uploading an image to MAAS
 
+**Important**: You must specify `base_image='rhel/10'` (not `custom/rocky10`) to ensure MAAS correctly identifies this as a RHEL-based system. This prevents netplan-related deployment failures, as Rocky Linux uses NetworkManager instead of netplan.
+
 ```shell
 maas $PROFILE boot-resources create name='custom/rocky10' \
     title='Rocky 10 Custom' architecture='amd64/generic' \

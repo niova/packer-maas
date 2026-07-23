@@ -15,18 +15,18 @@ on:
   workflow_dispatch:
     inputs:
       architecture:
-        description: 'Architecture to build (x86_64, aarch64, or both)'
+        description: 'Architecture to build (default: x86_64 only)'
         required: false
-        default: 'both'
+        default: 'x86_64'
         type: choice
         options:
           - x86_64
           - aarch64
           - both
       timeout:
-        description: 'Build timeout (e.g., 1h, 2h)'
+        description: 'Build timeout (e.g., 2h, 4h) - TCG builds are slow'
         required: false
-        default: '1h'
+        default: '4h'
         type: string
 
 env:
@@ -125,9 +125,34 @@ jobs:
         working-directory: rocky10
         env:
           PACKER_LOG: 1
-          TIMEOUT: ${{ github.event.inputs.timeout || '1h' }}
+          TIMEOUT: ${{ github.event.inputs.timeout || '3h' }}
+          ARCH: x86_64
         run: |
-          make ARCH=x86_64 TIMEOUT=${TIMEOUT}
+          # Prepare OVMF files
+          if [ ! -f /usr/share/OVMF/OVMF_CODE.fd ]; then
+            export OVMF_SFX="_4M"
+          else
+            export OVMF_SFX=""
+          fi
+
+          cp -v /usr/share/OVMF/OVMF_VARS${OVMF_SFX}.fd ${ARCH}_VARS.fd
+          truncate -s 2m ${ARCH}_VARS.fd
+
+          # Detect if running on ARM host
+          if [ "$(uname -m)" = "aarch64" ]; then
+            export HOST_IS_ARM=true
+          else
+            export HOST_IS_ARM=false
+          fi
+
+          # Build the image (using TCG instead of KVM in CI)
+          packer build \
+            -var architecture=${ARCH} \
+            -var host_is_arm=${HOST_IS_ARM} \
+            -var timeout=${TIMEOUT} \
+            -var ovmf_suffix=${OVMF_SFX} \
+            -var use_kvm=false \
+            rocky10.pkr.hcl
 
       - name: Generate build metadata
         working-directory: rocky10
@@ -168,9 +193,8 @@ jobs:
     needs: lint
     if: |
       (github.event_name != 'pull_request' || !github.event.pull_request.draft) &&
-      (github.event_name != 'workflow_dispatch' ||
-       github.event.inputs.architecture == 'both' ||
-       github.event.inputs.architecture == 'aarch64')
+      github.event_name == 'workflow_dispatch' &&
+      (github.event.inputs.architecture == 'both' || github.event.inputs.architecture == 'aarch64')
     timeout-minutes: 180
 
     steps:
@@ -230,9 +254,34 @@ jobs:
         working-directory: rocky10
         env:
           PACKER_LOG: 1
-          TIMEOUT: ${{ github.event.inputs.timeout || '1h' }}
+          TIMEOUT: ${{ github.event.inputs.timeout || '3h' }}
+          ARCH: aarch64
         run: |
-          make ARCH=aarch64 TIMEOUT=${TIMEOUT}
+          # Prepare OVMF files
+          if [ ! -f /usr/share/OVMF/OVMF_CODE.fd ]; then
+            export OVMF_SFX="_4M"
+          else
+            export OVMF_SFX=""
+          fi
+
+          cp -v /usr/share/OVMF/OVMF_VARS${OVMF_SFX}.fd ${ARCH}_VARS.fd
+          truncate -s 64m ${ARCH}_VARS.fd
+
+          # Detect if running on ARM host
+          if [ "$(uname -m)" = "aarch64" ]; then
+            export HOST_IS_ARM=true
+          else
+            export HOST_IS_ARM=false
+          fi
+
+          # Build the image (using TCG instead of KVM in CI)
+          packer build \
+            -var architecture=${ARCH} \
+            -var host_is_arm=${HOST_IS_ARM} \
+            -var timeout=${TIMEOUT} \
+            -var ovmf_suffix=${OVMF_SFX} \
+            -var use_kvm=false \
+            rocky10.pkr.hcl
 
       - name: Generate build metadata
         working-directory: rocky10
