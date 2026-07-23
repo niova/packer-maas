@@ -4,6 +4,10 @@
 
 The Packer template in this directory creates a Rocky 10 AMD64/ARM64 image for use with MAAS.
 
+**📦 Two Deployment Options:**
+- **Standard (this file)**: Traditional package-based installation - recommended for most users
+- **[bootc/Image-based](README-bootc.md)**: Container image-based immutable OS - for advanced use cases
+
 ## Prerequisites to create the image
 
 * A machine running Ubuntu 22.04+ with the ability to run KVM virtual machines.
