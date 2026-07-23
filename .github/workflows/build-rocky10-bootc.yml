@@ -1,12 +1,24 @@
 name: Build Rocky 10 bootc Image
 
 on:
+  push:
+    branches:
+      - main
+      - master
+    paths:
+      - 'rocky10/**'
+      - '.github/workflows/build-rocky10-bootc.yml'
+  pull_request:
+    paths:
+      - 'rocky10/**'
+      - '.github/workflows/build-rocky10-bootc.yml'
   workflow_dispatch:
     inputs:
       bootc_image_ref:
         description: 'bootc container image reference (e.g., quay.io/user/image:tag)'
-        required: true
+        required: false
         type: string
+        default: 'quay.io/centos-bootc/centos-bootc:stream10'
       bootc_registry_url:
         description: 'Container registry URL (optional, for authentication)'
         required: false
@@ -32,6 +44,10 @@ on:
 
 env:
   PACKER_VERSION: '1.11.0'
+  # Default bootc image for automated builds (public CentOS Stream 10 bootc image)
+  DEFAULT_BOOTC_IMAGE: 'quay.io/centos-bootc/centos-bootc:stream10'
+  DEFAULT_ARCH: 'x86_64'
+  DEFAULT_TIMEOUT: '1h'
 
 jobs:
   lint:
@@ -62,7 +78,7 @@ jobs:
         run: packer fmt -check -diff .
 
   build:
-    name: Build Rocky 10 bootc (${{ github.event.inputs.architecture }})
+    name: Build Rocky 10 bootc (${{ github.event.inputs.architecture || 'x86_64' }})
     runs-on: ubuntu-24.04
     needs: lint
     timeout-minutes: 120
@@ -112,9 +128,9 @@ jobs:
         uses: actions/cache@v4
         with:
           path: rocky10/packer_cache
-          key: rocky10-iso-${{ github.event.inputs.architecture }}-${{ hashFiles('rocky10/rocky10-bootc.pkr.hcl') }}
+          key: rocky10-iso-${{ github.event.inputs.architecture || env.DEFAULT_ARCH }}-${{ hashFiles('rocky10/rocky10-bootc.pkr.hcl') }}
           restore-keys: |
-            rocky10-iso-${{ github.event.inputs.architecture }}-
+            rocky10-iso-${{ github.event.inputs.architecture || env.DEFAULT_ARCH }}-
 
       - name: Initialize Packer
         working-directory: rocky10
@@ -124,8 +140,11 @@ jobs:
         working-directory: rocky10
         env:
           PACKER_LOG: 1
-          TIMEOUT: ${{ github.event.inputs.timeout || '1h' }}
-          ARCH: ${{ github.event.inputs.architecture }}
+          TIMEOUT: ${{ github.event.inputs.timeout || env.DEFAULT_TIMEOUT }}
+          ARCH: ${{ github.event.inputs.architecture || env.DEFAULT_ARCH }}
+          BOOTC_IMAGE: ${{ github.event.inputs.bootc_image_ref || env.DEFAULT_BOOTC_IMAGE }}
+          BOOTC_REGISTRY_URL: ${{ github.event.inputs.bootc_registry_url }}
+          BOOTC_REGISTRY_INSECURE: ${{ github.event.inputs.bootc_registry_insecure || 'false' }}
           # Note: BOOTC_REGISTRY_AUTH should be set as a GitHub secret
           BOOTC_REGISTRY_AUTH: ${{ secrets.BOOTC_REGISTRY_AUTH }}
         run: |
@@ -135,22 +154,26 @@ jobs:
           else
             export OVMF_SFX=""
           fi
-          
+
           cp -v /usr/share/OVMF/OVMF_VARS${OVMF_SFX}.fd ${ARCH}_VARS.fd
-          
+
           if [ "${ARCH}" = "aarch64" ]; then
             truncate -s 64m ${ARCH}_VARS.fd
           else
             truncate -s 2m ${ARCH}_VARS.fd
           fi
-          
+
           # Detect host architecture
           if [ "$(uname -m)" = "aarch64" ]; then
             export HOST_IS_ARM=true
           else
             export HOST_IS_ARM=false
           fi
-          
+
+          echo "Building with bootc image: ${BOOTC_IMAGE}"
+          echo "Architecture: ${ARCH}"
+          echo "Timeout: ${TIMEOUT}"
+
           # Build with bootc-specific parameters
           packer build \
             -var architecture=${ARCH} \
@@ -158,42 +181,48 @@ jobs:
             -var timeout=${TIMEOUT} \
             -var ovmf_suffix=${OVMF_SFX} \
             -var use_kvm=false \
-            -var bootc_image_ref="${{ github.event.inputs.bootc_image_ref }}" \
-            $([ -n "${{ github.event.inputs.bootc_registry_url }}" ] && echo "-var bootc_registry_url=${{ github.event.inputs.bootc_registry_url }}") \
+            -var bootc_image_ref="${BOOTC_IMAGE}" \
+            $([ -n "${BOOTC_REGISTRY_URL}" ] && echo "-var bootc_registry_url=${BOOTC_REGISTRY_URL}") \
             $([ -n "${BOOTC_REGISTRY_AUTH}" ] && echo "-var bootc_registry_auth=${BOOTC_REGISTRY_AUTH}") \
-            -var bootc_registry_insecure=${{ github.event.inputs.bootc_registry_insecure }} \
+            -var bootc_registry_insecure=${BOOTC_REGISTRY_INSECURE} \
             rocky10-bootc.pkr.hcl
 
       - name: Generate build metadata
         working-directory: rocky10
+        env:
+          ARCH: ${{ github.event.inputs.architecture || env.DEFAULT_ARCH }}
+          BOOTC_IMAGE: ${{ github.event.inputs.bootc_image_ref || env.DEFAULT_BOOTC_IMAGE }}
         run: |
-          echo "Build Date: $(date -u +%Y-%m-%dT%H:%M:%SZ)" > rocky10-bootc-${{ github.event.inputs.architecture }}.buildinfo
-          echo "Architecture: ${{ github.event.inputs.architecture }}" >> rocky10-bootc-${{ github.event.inputs.architecture }}.buildinfo
-          echo "bootc Image: ${{ github.event.inputs.bootc_image_ref }}" >> rocky10-bootc-${{ github.event.inputs.architecture }}.buildinfo
-          echo "Git Commit: ${{ github.sha }}" >> rocky10-bootc-${{ github.event.inputs.architecture }}.buildinfo
-          echo "Workflow Run: ${{ github.run_id }}" >> rocky10-bootc-${{ github.event.inputs.architecture }}.buildinfo
-          cat rocky10-bootc-${{ github.event.inputs.architecture }}.buildinfo
+          echo "Build Date: $(date -u +%Y-%m-%dT%H:%M:%SZ)" > rocky10-bootc-${ARCH}.buildinfo
+          echo "Architecture: ${ARCH}" >> rocky10-bootc-${ARCH}.buildinfo
+          echo "bootc Image: ${BOOTC_IMAGE}" >> rocky10-bootc-${ARCH}.buildinfo
+          echo "Git Commit: ${{ github.sha }}" >> rocky10-bootc-${ARCH}.buildinfo
+          echo "Workflow Run: ${{ github.run_id }}" >> rocky10-bootc-${ARCH}.buildinfo
+          echo "Trigger: ${{ github.event_name }}" >> rocky10-bootc-${ARCH}.buildinfo
+          cat rocky10-bootc-${ARCH}.buildinfo
 
       - name: Upload build artifact
         uses: actions/upload-artifact@v4
         with:
-          name: rocky10-bootc-${{ github.event.inputs.architecture }}-image
+          name: rocky10-bootc-${{ github.event.inputs.architecture || env.DEFAULT_ARCH }}-image
           path: |
             rocky10/rocky10-bootc.tar.gz
-            rocky10/rocky10-bootc-${{ github.event.inputs.architecture }}.buildinfo
+            rocky10/rocky10-bootc-${{ github.event.inputs.architecture || env.DEFAULT_ARCH }}.buildinfo
           retention-days: 30
           compression-level: 0
 
       - name: Display artifact info
         working-directory: rocky10
+        env:
+          ARCH: ${{ github.event.inputs.architecture || env.DEFAULT_ARCH }}
         run: |
           ls -lh rocky10-bootc.tar.gz
-          sha256sum rocky10-bootc.tar.gz > rocky10-bootc-${{ github.event.inputs.architecture }}.sha256
-          cat rocky10-bootc-${{ github.event.inputs.architecture }}.sha256
+          sha256sum rocky10-bootc.tar.gz > rocky10-bootc-${ARCH}.sha256
+          cat rocky10-bootc-${ARCH}.sha256
 
       - name: Upload checksum
         uses: actions/upload-artifact@v4
         with:
-          name: rocky10-bootc-${{ github.event.inputs.architecture }}-checksum
-          path: rocky10/rocky10-bootc-${{ github.event.inputs.architecture }}.sha256
+          name: rocky10-bootc-${{ github.event.inputs.architecture || env.DEFAULT_ARCH }}-checksum
+          path: rocky10/rocky10-bootc-${{ github.event.inputs.architecture || env.DEFAULT_ARCH }}.sha256
           retention-days: 30
