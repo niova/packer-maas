@@ -68,8 +68,8 @@ locals {
     "aarch64" = ""
   }
   qemu_machine = {
-    "x86_64"  = var.use_kvm ? "accel=kvm" : "accel=tcg,thread=multi"
-    "aarch64" = var.host_is_arm && var.use_kvm ? "virt,accel=kvm" : "virt,accel=tcg,thread=multi"
+    "x86_64"  = var.use_kvm ? "accel=kvm" : "accel=tcg"
+    "aarch64" = var.host_is_arm && var.use_kvm ? "virt,accel=kvm" : "virt,accel=tcg"
   }
   qemu_cpu = {
     "x86_64"  = var.use_kvm ? "host" : "max"
