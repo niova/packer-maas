@@ -2,8 +2,9 @@ text --non-interactive
 rootpw --lock
 zerombr
 clearpart --all --initlabel --disklabel=gpt
-# Let bootc manage the entire disk layout including boot partitions
-autopart --type=plain --fstype=xfs --nohome
+# bootc-compatible partitioning: reqpart creates boot partitions, no swap
+reqpart --add-boot
+part / --grow --fstype=xfs
 
 network --bootproto=dhcp --device=link --activate --onboot=on
 ignoredisk --only-use=vda
