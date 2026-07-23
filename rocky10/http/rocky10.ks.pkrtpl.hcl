@@ -105,7 +105,6 @@ lvm2
 mdadm
 device-mapper-multipath
 iscsi-initiator-utils
-netplan
 -plymouth
 # Remove ALSA firmware
 -a*-firmware
