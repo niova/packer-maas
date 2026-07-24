@@ -1,17 +1,11 @@
 name: Build Rocky 10 bootc Image
 
+# NOTE: bootc builds with XFS filesystems cannot complete post-processing in GitHub Actions
+# due to lack of kernel module support (XFS has no FUSE driver, libguestfs fails in containers).
+# This workflow is provided for manual local builds only.
+# Use the standard rocky10 workflow for CI/CD automation.
+
 on:
-  push:
-    branches:
-      - main
-      - master
-    paths:
-      - 'rocky10/**'
-      - '.github/workflows/build-rocky10-bootc.yml'
-  pull_request:
-    paths:
-      - 'rocky10/**'
-      - '.github/workflows/build-rocky10-bootc.yml'
   workflow_dispatch:
     inputs:
       bootc_image_ref:
