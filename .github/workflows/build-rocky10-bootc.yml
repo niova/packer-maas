@@ -109,7 +109,8 @@ jobs:
             fuse2fs \
             ovmf \
             cloud-image-utils \
-            parted
+            parted \
+            libguestfs-tools
 
       - name: Setup Packer
         uses: hashicorp/setup-packer@main
