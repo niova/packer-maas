@@ -1,64 +1,54 @@
 #!/bin/bash -e
 #
-# bootc-tar-root - Create a tar.gz from bootc image using nbd-client
+# bootc-tar-root - Create a tar.gz from bootc image using guestfish
 #
-# Handles XFS filesystems which don't have FUSE drivers
+# Handles XFS filesystems using libguestfs (no kernel modules required)
 #
 
-ROOT_MOUNT=${TMP_DIR}/root
-mkdir -p "${ROOT_MOUNT}"
+echo 'Detecting root partition with guestfish...'
 
-echo 'Detecting root partition...'
-# Use nbd-client to expose the NBD device as a real block device
-modprobe nbd max_part=8 || true
-sleep 2
+# Use guestfish to inspect the image and create tar
+# This works in containers/CI without needing kernel modules
+GUESTFISH_OUTPUT=$(guestfish --ro -a "${PACKER_OUTPUT}" <<'GUESTFISH_EOF'
+run
+list-filesystems
+GUESTFISH_EOF
+)
 
-# Connect to the NBD socket
-nbd-client -unix "${TMP_DIR}"/qemu-img.sock /dev/nbd0
-sleep 2
+# Find the XFS root partition (usually the largest one)
+ROOT_DEV=$(echo "$GUESTFISH_OUTPUT" | grep xfs | head -1 | cut -d: -f1)
 
-# Find the XFS root partition (usually the largest partition)
-ROOT_PARTITION=$(lsblk -nlo NAME,FSTYPE,SIZE /dev/nbd0 | grep xfs | sort -k3 -h | tail -1 | awk '{print $1}')
-
-if [ -z "$ROOT_PARTITION" ]; then
+if [ -z "$ROOT_DEV" ]; then
     echo "ERROR: Could not find XFS root partition!" >&2
-    nbd-client -d /dev/nbd0
+    echo "Filesystems found:"
+    echo "$GUESTFISH_OUTPUT"
     exit 1
 fi
 
-echo "Found root partition: /dev/${ROOT_PARTITION}"
-
-# Mount the root partition
-echo 'Mounting root partition...'
-mount -t xfs -o ro,nouuid "/dev/${ROOT_PARTITION}" "${ROOT_MOUNT}"
-
-# Clean up machine-id
-if [ -f "$ROOT_MOUNT/etc/machine-id" ]; then
-    echo 'Resetting machine-id...'
-    : >| "$ROOT_MOUNT/etc/machine-id" || true
-fi
-
-# Clean cloud-init state
-if [ -f "$ROOT_MOUNT/var/lib/cloud/instance" ]; then
-    echo 'Cleaning cloud-init state...'
-    rm -f "$ROOT_MOUNT/var/log/cloud-init*.log" \
-        "$ROOT_MOUNT/var/lib/cloud/instance" || true
-    rm -rf "$ROOT_MOUNT/var/lib/cloud/instances" || true
-fi
+echo "Found root partition: ${ROOT_DEV}"
 
 echo "Creating MAAS image ${OUTPUT}..."
 TARFILE=${OUTPUT%*.gz}
-tar -Scpf "${TARFILE}" --acls --selinux --xattrs \
-    --one-file-system \
-    --exclude-backups \
-    -C "$ROOT_MOUNT" .
 
+# Use guestfish to create tar directly from the image
+guestfish --ro -a "${PACKER_OUTPUT}" <<GUESTFISH_TAR
+run
+mount-ro ${ROOT_DEV} /
+
+# Clean machine-id if it exists
+-sh "if [ -f /etc/machine-id ]; then > /etc/machine-id; fi"
+
+# Clean cloud-init state if it exists
+-sh "rm -f /var/log/cloud-init*.log /var/lib/cloud/instance 2>/dev/null || true"
+-sh "rm -rf /var/lib/cloud/instances 2>/dev/null || true"
+
+# Create tar with proper options
+tar-out / ${TARFILE} compress:none numericowner:true xattrs:true selinux:true acls:true excludes:dev excludes:proc excludes:sys
+GUESTFISH_TAR
+
+echo "Compressing tar file..."
 gzip_cmd="gzip"
 command -v pigz >/dev/null 2>&1 && gzip_cmd="pigz"
 ${gzip_cmd} --best --force "${TARFILE}"
-
-sync
-umount "${ROOT_MOUNT}"
-nbd-client -d /dev/nbd0
 
 echo 'Done'
