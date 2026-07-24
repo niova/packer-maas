@@ -11,7 +11,8 @@ ignoredisk --only-use=vda
 keyboard --vckeymap=us --xlayouts='us'
 lang en_US.UTF-8
 timezone UTC --utc
-reboot --eject
+# Use poweroff instead of reboot for Packer (no communicator to detect completion)
+poweroff
 
 # OSTree/bootc container setup
 # Set BOOTC_IMAGE_REF and BOOTC_REGISTRY_AUTH via template variables
