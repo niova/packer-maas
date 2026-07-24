@@ -2,19 +2,22 @@ text --non-interactive
 rootpw --lock
 zerombr
 clearpart --all --initlabel --disklabel=gpt
-reqpart
-part / --fstype=xfs --grow --asprimary
+# bootc-compatible partitioning: reqpart creates boot partitions, no swap
+reqpart --add-boot
+part / --grow --fstype=xfs
 
 network --bootproto=dhcp --device=link --activate --onboot=on
 ignoredisk --only-use=vda
 keyboard --vckeymap=us --xlayouts='us'
 lang en_US.UTF-8
 timezone UTC --utc
-reboot --eject
+# Use poweroff instead of reboot for Packer (no communicator to detect completion)
+poweroff
 
 # OSTree/bootc container setup
 # Set BOOTC_IMAGE_REF and BOOTC_REGISTRY_AUTH via template variables
-bootc --source-imgref=${BOOTC_IMAGE_REF}
+# Note: bootc requires docker:// prefix for container registry images
+bootc --source-imgref=docker://${BOOTC_IMAGE_REF}
 
 %pre
 # Configure container registry authentication if provided

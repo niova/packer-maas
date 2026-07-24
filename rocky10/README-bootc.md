@@ -4,16 +4,21 @@
 
 This is an **alternative** Packer template for Rocky 10 that uses **bootc** (image-based/OSTree) deployment instead of traditional package installation.
 
+**⚠️ IMPORTANT LIMITATION:**
+bootc builds use XFS filesystems which **cannot be processed in GitHub Actions** due to lack of kernel module support. This template is designed for **local builds only** on systems with KVM access.
+
 **Use this variant if:**
 - You want immutable infrastructure
 - Your OS is built as a container image
 - You need atomic updates and rollbacks
 - You're deploying edge/embedded systems
+- **You can build locally (not in CI/CD)**
 
 **Use the standard `rocky10.pkr.hcl` if:**
 - You want traditional package-based installation
 - You need a mutable, customizable OS
 - You're doing standard MAAS bare-metal deployments
+- **You need CI/CD automation**
 
 ## What is bootc?
 
@@ -140,6 +145,54 @@ maas $PROFILE boot-resources create name='custom/rocky10-bootc' \
 - `ARCH`: Architecture (`x86_64` or `aarch64`)
 - `TIMEOUT`: Build timeout (default: `1h`)
 
+## Testing Locally with virt-install
+
+Before running the full Packer build, you can quickly test the bootc kickstart using `virt-install`:
+
+### Prerequisites
+```bash
+sudo apt-get install qemu-system libvirt-daemon-system virtinst virt-viewer
+```
+
+### Quick Test Command
+```bash
+# Download Rocky 10 netboot ISO
+wget http://download.rockylinux.org/pub/rocky/10/isos/x86_64/Rocky-10-latest-x86_64-boot.iso
+
+# Edit your kickstart to point to your bootc image
+# Then run virt-install
+virt-install --name rocky10-bootc-test \
+  --cpu host --vcpus 4 --memory 4096 \
+  --disk /var/lib/libvirt/images/rocky10-bootc-test.qcow2,format=qcow2,bus=virtio,size=64 \
+  --osinfo rocky10 \
+  --machine q35 \
+  --accelerate \
+  --graphics vnc,listen=127.0.0.1,port=5900 \
+  --qemu-commandline="-device virtio-net,netdev=user.0,bus=pcie.0,addr=0x10 -netdev user,id=user.0,hostfwd=tcp::5555-:22" \
+  --initrd-inject rocky10/http/rocky10-bootc.ks.pkrtpl.hcl \
+  --extra-args="inst.ks=file:/rocky10-bootc.ks.pkrtpl.hcl inst.sshd console=ttyS0" \
+  --location Rocky-10-latest-x86_64-boot.iso \
+  --noautoconsole
+
+# Connect with VNC viewer
+virt-viewer --connect qemu:///system rocky10-bootc-test
+# Or: vncviewer localhost:5900
+```
+
+### Using HTTP-served Kickstart
+You can also serve the kickstart via HTTP (like Packer does):
+
+```bash
+# Start a simple HTTP server in rocky10/http/
+cd rocky10/http
+python3 -m http.server 8000
+
+# Then use in virt-install:
+--extra-args="inst.ks=http://10.0.2.2:8000/rocky10-bootc.ks.pkrtpl.hcl inst.sshd"
+```
+
+**Note:** You'll need to manually replace template variables (`${BOOTC_IMAGE_REF}`, etc.) in the kickstart file for manual testing.
+
 ## Troubleshooting
 
 ### Image Pull Fails
@@ -147,6 +200,11 @@ Check registry authentication and network access from the installer.
 
 ### bootc Not Found
 Ensure you're using Rocky Linux 10 (or CentOS Stream 10+) which includes bootc.
+
+### EFI Mount Error
+If you see `rm: cannot remove '/mnt/sysimage/boot/efi': Device or resource busy`:
+- This was fixed by explicitly defining `/boot/efi` partition instead of using `reqpart`
+- Make sure you're using the latest kickstart from this repo
 
 ### MAAS Deployment Fails
 Verify your container image includes:
@@ -159,3 +217,4 @@ Verify your container image includes:
 - [bootc Documentation](https://containers.github.io/bootc/)
 - [CentOS bootc Images](https://quay.io/repository/centos-bootc/centos-bootc)
 - [Image Mode for RHEL](https://docs.redhat.com/en/documentation/red_hat_enterprise_linux/9/html/composing_installing_and_managing_rhel_for_edge_images/index)
+- [virt-install Documentation](https://manpages.ubuntu.com/manpages/jammy/man1/virt-install.1.html)
