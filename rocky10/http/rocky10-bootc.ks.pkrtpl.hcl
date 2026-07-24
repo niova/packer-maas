@@ -15,7 +15,8 @@ reboot --eject
 
 # OSTree/bootc container setup
 # Set BOOTC_IMAGE_REF and BOOTC_REGISTRY_AUTH via template variables
-bootc --source-imgref=${BOOTC_IMAGE_REF}
+# Note: bootc requires docker:// prefix for container registry images
+bootc --source-imgref=docker://${BOOTC_IMAGE_REF}
 
 %pre
 # Configure container registry authentication if provided
